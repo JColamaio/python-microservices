@@ -1,32 +1,30 @@
 apiVersion: apps/v1
 kind: Deployment
-metadata: 
+metadata:
   name: auth
-  labels: 
+  labels:
     app: auth
-
 spec:
   replicas: 2
   selector:
-    matchlabels:
+    matchLabels:
       app: auth
-    strategy:
-        type: RollingUpdate
-        RollingUpdate:
-          maxSurge: 3
-
-    template:
-      metadata:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 3
+  template:
+    metadata:
       labels:
         app: auth
-      spec:
-        containers:
-          - name: auth
-            image: sweasytech/auth
-            ports:
-              - containerPort: 5000
-            envFrom:
-              - configMapRef:
+    spec:
+      containers:
+        - name: auth
+          image: sweasytech/auth
+          ports:
+            - containerPort: 5000
+          envFrom:
+            - configMapRef:
                 name: auth-configmap
-              - secretRef:
+            - secretRef:
                 name: auth-secret
