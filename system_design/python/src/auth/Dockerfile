@@ -1,14 +1,15 @@
-# Use an appropriate base image
 FROM python:3.10-slim-bullseye
 
-# Update and install build dependencies
-RUN apt-get update -y \
-    && apt-get install -y default-libmysqlclient-dev \
-    && apt-get clean
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends --no-install-suggests \
+  build-essential \
+  && pip install --no-cache-dir --upgrade pip
 
-# Set the working directory
 WORKDIR /app
-
-# Copy the requirements file and install dependencies
 COPY ./requirements.txt /app
-RUN pip install -r /app/requirements.txt
+RUN pip install --no-cache-dir --requirement /app/requirements.txt
+COPY . /app
+
+EXPOSE 8080
+
+CMD ["python3", "server.py"]
