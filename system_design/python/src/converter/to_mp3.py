@@ -1,43 +1,42 @@
-import pika, json, tempfile, os
-from bson.objectid import ObjectId
-import moviepy.editor
+import pika, sys, os, time
+from pymongo import MongoClient
+import gridfs
+from convert import to_mp3
 
 
-def start(message, fs_videos, fs_mp3s, channel):
-    message = json.loads(message)
+def main():
+    client = MongoClient("host.minikube.internal", 27017)
+    db_videos = client.videos
+    db_mp3s = client.mp3s
+    # gridfs
+    fs_videos = gridfs.GridFS(db_videos)
+    fs_mp3s = gridfs.GridFS(db_mp3s)
 
-    # empty temp file
-    tf = tempfile.NamedTemporaryFile()
-    # video contents
-    out = fs_videos.get(ObjectId(message["video_fid"]))
-    # add video contents to empty file
-    tf.write(out.read())
-    # create audio from temp video file
-    audio = moviepy.editor.VideoFileClip(tf.name).audio
-    tf.close()
+    # rabbitmq connection
+    connection = pika.BlockingConnection(pika.ConnectionParameters(host="rabbitmq"))
+    channel = connection.channel()
 
-    # write audio to the file
-    tf_path = tempfile.gettempdir() + f"/{message['video_fid']}.mp3"
-    audio.write_audiofile(tf_path)
+    def callback(ch, method, properties, body):
+        err = to_mp3.start(body, fs_videos, fs_mp3s, ch)
+        if err:
+            ch.basic_nack(delivery_tag=method.delivery_tag)
+        else:
+            ch.basic_ack(delivery_tag=method.delivery_tag)
 
-    # save file to mongo
-    f = open(tf_path, "rb")
-    data = f.read()
-    fid = fs_mp3s.put(data)
-    f.close()
-    os.remove(tf_path)
+    channel.basic_consume(
+        queue=os.environ.get("VIDEO_QUEUE"), on_message_callback=callback
+    )
 
-    message["mp3_fid"] = str(fid)
+    print("Waiting for messages. To exit press CTRL+C")
 
+    channel.start_consuming()
+
+if __name__ == "__main__":
     try:
-        channel.basic_publish(
-            exchange="",
-            routing_key=os.environ.get("MP3_QUEUE"),
-            body=json.dumps(message),
-            properties=pika.BasicProperties(
-                delivery_mode=pika.spec.PERSISTENT_DELIVERY_MODE
-            ),
-        )
-    except Exception as err:
-        fs_mp3s.delete(fid)
-        return "failed to publish message"
+        main()
+    except KeyboardInterrupt:
+        print("Interrupted")
+        try:
+            sys.exit(0)
+        except SystemExit:
+            os._exit(0)
